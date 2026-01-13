@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam Capture & Save (JPEG) with Zoom and Rotate</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column; /* Stacks the main sections vertically */
+            align-items: center;
+            gap: 30px; /* Increased space between main elements */
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+
+        .top-section {
+            display: flex;
+            flex-direction: row; /* Arranges video and photo display side-by-side */
+            gap: 30px; /* Increased space between video and photo display */
+            align-items: flex-start; /* Aligns items to the top if heights vary */
+            max-width: 2600px; /* Optional: Limit overall width on very large screens */
+        }
+
+        #videoElement {
+            width: 1280px; /* Increased width */
+            height: 960px; /* Increased height to maintain 4:3 aspect ratio (1280 * 3/4) */
+            border: 1px solid #333;
+            background-color: black; /* To show when webcam is not active */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3); /* Slightly larger shadow */
+        }
+
+        #photoDisplay {
+            width: 640px; /* Increased width to match video */
+            height: 480px; /* Increased height to match video */
+            border: 1px solid #ccc;
+            background-color: #fff;
+            display: flex;
+            justify-content: center; /* Center image horizontally */
+            align-items: center; /* Center image vertically */
+            padding: 10px; /* Slightly larger padding */
+            box-sizing: border-box; /* Include padding in width/height */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2); /* Slightly larger shadow */
+            overflow: hidden; /* Hide anything that goes outside the box */
+        }
+
+        #photoDisplay img {
+            max-width: 100%;
+            max-height: 100%; /* Ensure image fits within the fixed photoDisplay area */
+            object-fit: contain; /* Scales the image to fit without cropping, maintaining aspect ratio */
+            display: block;
+            /* Transformations for rotation will be applied via JS when drawing on canvas */
+        }
+
+        #controls {
+            display: flex;
+            gap: 20px; /* Increased space between buttons */
+            margin-top: 10px; /* Space below the main section */
+            flex-wrap: wrap; /* Allow controls to wrap on smaller screens */
+            justify-content: center;
+        }
+
+        #captureBtn, #saveBtn, #toggleCameraButton, #zoomSlider, #rotateLeftBtn, #rotateRightBtn {
+            padding: 15px 30px; /* Larger padding for bigger buttons */
+            font-size: 20px; /* Larger font size */
+            cursor: pointer;
+            border: none;
+            border-radius: 8px; /* Slightly more rounded corners */
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        #captureBtn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        #captureBtn:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+
+        #saveBtn {
+            background-color: #28a745;
+            color: white;
+            display: none; /* Initially hidden */
+        }
+
+        #saveBtn:hover {
+            background-color: #218838;
+            transform: translateY(-2px);
+        }
+
+        #toggleCameraButton {
+            background-color: #ffc107; /* Yellow/orange for toggle */
+            color: #333;
+        }
+
+        #toggleCameraButton:hover {
+            background-color: #e0a800;
+            transform: translateY(-2px);
+        }
+
+        #rotateLeftBtn, #rotateRightBtn {
+            background-color: #6c757d; /* Grey for rotate buttons */
+            color: white;
+            display: none; /* Initially hidden */
+        }
+
+        #rotateLeftBtn:hover, #rotateRightBtn:hover {
+            background-color: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .zoom-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fcfcfc;
+        }
+
+        #zoomSlider {
+            -webkit-appearance: none; /* Override default look */
+            appearance: none;
+            width: 200px;
+            height: 10px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+            border-radius: 5px;
+            padding: 0; /* Remove default padding */
+        }
+
+        #zoomSlider:hover {
+            opacity: 1;
+        }
+
+        #zoomSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+        }
+
+        #zoomSlider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+        }
+
+        #zoomValue {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #555;
+        }
+
+        #canvasElement {
+            display: none; /* Canvas is used for processing, not display */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-section">
+        <video id="videoElement" autoplay></video>
+
+        <div id="photoDisplay">
+            <p>Your captured photo will appear here.</p>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button id="toggleCameraButton">Turn Off Camera</button>
+        <button id="captureBtn" accesskey="s">Take Picture</button>
+        <button id="saveBtn">Save Picture</button>
+        <button id="rotateLeftBtn">Rotate Left</button>
+        <button id="rotateRightBtn">Rotate Right</button>
+        <div class="zoom-controls">
+            <label for="zoomSlider">Zoom:</label>
+            <input type="range" id="zoomSlider" min="1" max="1" value="1" step="0.1" disabled>
+            <span id="zoomValue">1.0x</span>
+        </div>
+    </div>
+
+    <canvas id="canvasElement" width="1280" height="960"></canvas>
+
+    <script>
+        const video = document.getElementById('videoElement');
+        const captureBtn = document.getElementById('captureBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const canvas = document.getElementById('canvasElement');
+        const context = canvas.getContext('2d');
+        const photoDisplay = document.getElementById('photoDisplay');
+        const toggleCameraButton = document.getElementById('toggleCameraButton');
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomValueSpan = document.getElementById('zoomValue');
+        const rotateLeftBtn = document.getElementById('rotateLeftBtn');
+        const rotateRightBtn = document.getElementById('rotateRightBtn');
+
+        let capturedImageURL;
+        let currentStream;
+        let inactivityTimeout; // Variable to hold our timeout ID
+        let videoTrack; // To store the active video track for capabilities and constraints
+        let currentRotation = 0; // Stores the current rotation angle in degrees
+        let capturedImageBitmap; // To hold the ImageBitmap of the captured image
+
+        const INACTIVITY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+        // Function to reset the inactivity timer
+        function resetInactivityTimer() {
+            clearTimeout(inactivityTimeout); // Clear any existing timer
+            if (currentStream) { // Only set a new timer if the camera is currently on
+                inactivityTimeout = setTimeout(() => {
+                    console.log("Camera inactive for 5 minutes, turning off...");
+                    disableWebcam();
+                }, INACTIVITY_TIME);
+            }
+        }
+
+        // Function to update the zoom level
+        async function setZoom() {
+            if (!videoTrack || !videoTrack.getCapabilities().zoom) {
+                console.warn("Zoom control not supported by this camera or track not available.");
+                zoomSlider.disabled = true;
+                return;
+            }
+
+            const zoomFactor = parseFloat(zoomSlider.value);
+            zoomValueSpan.textContent = `${zoomFactor.toFixed(1)}x`;
+
+            try {
+                // Apply the new zoom constraint
+                await videoTrack.applyConstraints({
+                    advanced: [{ zoom: zoomFactor }]
+                });
+                resetInactivityTimer(); // Reset timer after user interaction (zoom)
+            } catch (error) {
+                console.error("Error applying zoom constraint:", error);
+                // Optionally revert slider or show an error to the user
+            }
+        }
+
+        // Get access to the webcam
+        async function enableWebcam() {
+            try {
+                // Request camera with zoom capability if supported
+                const constraints = {
+                    video: {
+                        zoom: true // Request zoom capability
+                    },
+                    audio: false
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                currentStream = stream;
+                videoTrack = stream.getVideoTracks()[0]; // Get the video track
+
+                toggleCameraButton.textContent = 'Turn Off Camera';
+                captureBtn.disabled = false;
+                video.style.display = 'block';
+                photoDisplay.innerHTML = '<p>Your captured photo will appear here.</p>';
+                saveBtn.style.display = 'none'; // Hide save and rotate buttons until a picture is taken
+                rotateLeftBtn.style.display = 'none';
+                rotateRightBtn.style.display = 'none';
+                currentRotation = 0; // Reset rotation when camera is turned on/off
+
+                // Check and configure zoom capabilities
+                if (videoTrack.getCapabilities && videoTrack.getCapabilities().zoom) {
+                    const capabilities = videoTrack.getCapabilities();
+                    const settings = videoTrack.getSettings();
+
+                    zoomSlider.min = capabilities.zoom.min;
+                    zoomSlider.max = capabilities.zoom.max;
+                    zoomSlider.step = capabilities.zoom.step || (capabilities.zoom.max - capabilities.zoom.min) / 100; // Fallback step
+                    zoomSlider.value = settings.zoom || 1; // Set current zoom or default to 1
+                    zoomValueSpan.textContent = `${parseFloat(zoomSlider.value).toFixed(1)}x`;
+                    zoomSlider.disabled = false;
+                    console.log("Camera supports zoom:", capabilities.zoom);
+                } else {
+                    console.warn("This camera does not support zoom.");
+                    zoomSlider.disabled = true;
+                    zoomValueSpan.textContent = "N/A";
+                }
+
+                resetInactivityTimer(); // Start the timer when camera turns on
+            } catch (error) {
+                console.error("Error accessing webcam:", error);
+                let errorMessage = "Could not access the webcam. Please make sure your webcam is enabled and you've granted browser permissions.";
+                if (error.name === 'NotAllowedError') {
+                    errorMessage = "Webcam access denied. Please allow camera access in your browser settings.";
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage = "No webcam found. Please ensure a camera is connected.";
+                } else if (error.name === 'OverconstrainedError' && error.constraint === 'zoom') {
+                    errorMessage = "Your camera does not support the requested zoom capabilities. Trying without zoom...";
+                    // Attempt to enable webcam without zoom constraint if it failed
+                    try {
+                        const streamWithoutZoom = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        video.srcObject = streamWithoutZoom;
+                        currentStream = streamWithoutZoom;
+                        videoTrack = streamWithoutZoom.getVideoTracks()[0];
+                        toggleCameraButton.textContent = 'Turn Off Camera';
+                        captureBtn.disabled = false;
+                        video.style.display = 'block';
+                        photoDisplay.innerHTML = '<p>Your captured photo will appear here.</p>';
+                        zoomSlider.disabled = true; // Disable zoom controls as it failed
+                        zoomValueSpan.textContent = "N/A";
+                        resetInactivityTimer();
+                        return; // Exit here, successful but no zoom
+                    } catch (retryError) {
+                        console.error("Retry without zoom also failed:", retryError);
+                        errorMessage = "Could not access the webcam even without zoom. Please check your camera.";
+                    }
+                }
+                alert(errorMessage);
+                video.style.display = 'none';
+                photoDisplay.innerHTML = `<p style="color: red;">${errorMessage}</p>`;
+                toggleCameraButton.textContent = 'Turn On Camera';
+                captureBtn.disabled = true;
+                saveBtn.style.display = 'none';
+                rotateLeftBtn.style.display = 'none';
+                rotateRightBtn.style.display = 'none';
+                zoomSlider.disabled = true;
+                zoomValueSpan.textContent = "N/A";
+                clearTimeout(inactivityTimeout); // Clear timer if camera failed to start
+            }
+        }
+
+        // Function to stop the webcam
+        function disableWebcam() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                currentStream = null;
+                videoTrack = null; // Clear video track reference
+                toggleCameraButton.textContent = 'Turn On Camera';
+                captureBtn.disabled = true;
+                saveBtn.style.display = 'none';
+                rotateLeftBtn.style.display = 'none';
+                rotateRightBtn.style.display = 'none';
+                video.style.display = 'none';
+                photoDisplay.innerHTML = '<p>Webcam is off. Click "Turn On Camera" to activate.</p>';
+                zoomSlider.disabled = true; // Disable zoom when camera is off
+                zoomValueSpan.textContent = "N/A";
+                clearTimeout(inactivityTimeout); // Clear the timer when camera turns off
+                currentRotation = 0; // Reset rotation
+                capturedImageBitmap = null; // Clear captured image
+            }
+        }
+
+        // Function to draw and display the image with current rotation
+        async function drawAndDisplayImage() {
+            if (!capturedImageBitmap) return;
+
+            context.clearRect(0, 0, canvas.width, canvas.height); // Clear previous drawing
+
+            // Calculate dimensions based on rotation
+            const isRotated90or270 = (currentRotation % 180 !== 0);
+            const drawWidth = isRotated90or270 ? capturedImageBitmap.height : capturedImageBitmap.width;
+            const drawHeight = isRotated90or270 ? capturedImageBitmap.width : capturedImageBitmap.height;
+
+            // Adjust canvas size for rotation
+            canvas.width = drawWidth;
+            canvas.height = drawHeight;
+
+            context.save(); // Save the current canvas state
+
+            // Translate to the center of the canvas
+            context.translate(canvas.width / 2, canvas.height / 2);
+            // Rotate
+            context.rotate(currentRotation * Math.PI / 180);
+            // Draw the image, accounting for translation to center
+            context.drawImage(capturedImageBitmap, -capturedImageBitmap.width / 2, -capturedImageBitmap.height / 2);
+
+            context.restore(); // Restore the canvas state
+
+            capturedImageURL = canvas.toDataURL('image/jpeg', 0.95);
+            const img = document.createElement('img');
+            img.src = capturedImageURL;
+            photoDisplay.innerHTML = '';
+            photoDisplay.appendChild(img);
+        }
+
+        // Trigger webcam access on page load
+        enableWebcam();
+
+        // Handle the capture button click
+        captureBtn.addEventListener('click', async () => {
+            if (!video.srcObject || !currentStream) {
+                alert("Webcam is not active. Please ensure permissions are granted and the camera is turned on.");
+                return;
+            }
+
+            // Set canvas size to video dimensions for initial capture
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Create an ImageBitmap from the canvas to store for rotation
+            capturedImageBitmap = await createImageBitmap(canvas);
+            currentRotation = 0; // Reset rotation for new capture
+
+            drawAndDisplayImage(); // Display the captured (unrotated) image
+
+            saveBtn.style.display = 'block';
+            rotateLeftBtn.style.display = 'block';
+            rotateRightBtn.style.display = 'block';
+            resetInactivityTimer(); // Reset timer after user interaction (capture)
+        });
+
+        // Handle the save button click
+        saveBtn.addEventListener('click', () => {
+            if (capturedImageURL) {
+                const a = document.createElement('a');
+                a.href = capturedImageURL;
+                a.download = 'webcam_capture_' + new Date().toISOString().slice(0, 19).replace(/[-T:]/g, '') + '.jpg';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                resetInactivityTimer(); // Reset timer after user interaction (save)
+            } else {
+                alert("No picture has been captured yet!");
+            }
+        });
+
+        // Handle the toggle camera button click
+        toggleCameraButton.addEventListener('click', () => {
+            if (currentStream) {
+                disableWebcam();
+            } else {
+                enableWebcam();
+            }
+        });
+
+        // Add event listener for zoom slider
+        zoomSlider.addEventListener('input', setZoom); // Use 'input' for real-time updates
+
+        // Rotate Left button click
+        rotateLeftBtn.addEventListener('click', () => {
+            if (capturedImageBitmap) {
+                currentRotation = (currentRotation - 90) % 360;
+                drawAndDisplayImage();
+                resetInactivityTimer();
+            }
+        });
+
+        // Rotate Right button click
+        rotateRightBtn.addEventListener('click', () => {
+            if (capturedImageBitmap) {
+                currentRotation = (currentRotation + 90) % 360;
+                drawAndDisplayImage();
+                resetInactivityTimer();
+            }
+        });
+
+        // Add event listeners to reset timer on general user activity on the document
+        ['mousemove', 'keydown', 'click', 'scroll'].forEach(eventType => { // Added scroll for completeness
+            document.addEventListener(eventType, () => {
+                if (currentStream) { // Only reset if camera is currently on
+                    resetInactivityTimer();
+                }
+            });
+        });
+    </script>
+
+</body>
+</html>
